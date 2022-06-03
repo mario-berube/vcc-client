@@ -53,7 +53,7 @@ def is_valid_user(group_id):
         print(f'Failed validate user {str(exc)}')
 
 
-if __name__ == '__main__':
+def main():
     import argparse
 
     parser = argparse.ArgumentParser( description='Schedule Viewer' )
@@ -74,3 +74,8 @@ if __name__ == '__main__':
     elif args.session:
         show_session(args.session)
 
+
+if __name__ == '__main__':
+    import sys
+
+    sys.exit(main())

@@ -2,7 +2,7 @@ import re
 from datetime import datetime, timedelta
 
 from master import COLUMNS, UNUSED, TYPES
-from vcc import signature, VCCError
+from vcc import VCCError
 from vcc.vws import get_client
 
 
@@ -28,10 +28,9 @@ def update_master(path):
 
     # Post data to VCC
     try:
-        client = get_client()
-        headers = signature.make('CC')
-        rsp = client.post('/sessions', data=sessions, headers=headers)
-        if not rsp or not signature.validate(rsp):
+        client = get_client('CC')
+        rsp = client.post('/sessions', data=sessions)
+        if not rsp:
             raise VCCError(rsp.text)
         for ses_id, status in rsp.json().items():
             print(ses_id, status)

@@ -3,17 +3,16 @@ import re
 import os
 import signal
 
-from vcc import settings, messaging, vws
+from vcc import settings, messaging
+from vcc.vws import get_client, VCCError
 from vcc.session import Session
-
-from requests import codes as HTTPcodes
 
 
 class Listener:
 
     extract_name = re.compile('.*filename=\"(?P<name>.*)\".*').match
 
-    def __init__(self):
+    def __init__(self, group_id, session):
 
         # Make sure it terminate elegantly after Ctr+C
         #signal.signal(signal.SIGINT, self.killed)
@@ -21,6 +20,7 @@ class Listener:
 
         self.messenger = None
 
+        self.client = get_client(group_id)
         self.sta_id = settings.Signatures.NS[0]
 
     def killed(self, sig, frame):
@@ -31,14 +31,13 @@ class Listener:
 
         while True:
             try:
-                config = vws.get_credentials('NS')
-
+                config = self.client.get_inbox_credentials()
                 with messaging.RMQclient(config, multi=True) as self.messenger:
                     self.messenger.monit(self.process_message, self.process_timeout, timeout=60)
                     break
             except KeyboardInterrupt:
                 return
-            except vws.VWSclientError as err:
+            except VCCError as err:
                 print('Fatal error', str(err))
                 return
             except messaging.RMQclientException as exc:
@@ -57,11 +56,21 @@ class Listener:
             text = ', '.join([f'{key}={val}' for key, val in data.items()]) if isinstance(data, dict) else str(data)
             print(f'Message: {code} {text}')
             if code == 'master':
-                self.session_has_changed(data)
+                for ses_id, status in data.items():
+                    self.session_has_changed(ses_id, status)
+                self.show_upcoming_sessions()
             elif code == 'schedule':
                 self.download_schedule(data)
         # Always acknowledge message
+        print('Calling acknowledge')
         self.messenger.acknowledge_msg()
+
+    def session_has_changed(self, ses_id, status):
+        # Get session information
+        rsp = self.client.get(f'/sessions/{ses_id}')
+        if rsp:
+            session = Session(rsp.json())
+            print(f'{session} --- {status}!')
 
     # Process timeout
     def process_timeout(self):
@@ -69,32 +78,21 @@ class Listener:
         self.messenger.send(self.sta_id, 'TEST', 'CC-GSFC', {'test': 'This is a test'})
 
     # Process message with master code
-    def session_has_changed(self, data):
-        ses_id = data['session']
-        print(f'Session {ses_id} has been updated!')
-        # Get client
-        client = vws.get_client()
-        # Get session information
-        rsp = client.get(f'/sessions/{ses_id}')
-        if rsp.status_code == HTTPcodes.ok:
-            session = Session(rsp.json())
-            print(session)
+    def show_upcoming_sessions(self):
         # Print upcoming sessions
         print(f'\nComing sessions for {self.sta_id}')
-        rsp = client.get(f'/sessions/next/{self.sta_id}', params={'days': 14})
-        if rsp.status_code == HTTPcodes.ok:
-            for data in rsp.json():
+        rsp = self.client.get(f'/sessions/next/{self.sta_id}', params={'days': 14})
+        if rsp:
+            for index, data in enumerate(rsp.json(), 1):
                 session = Session(data)
-                print(session)
+                print(f'{index:2d} {session}')
 
     # Download schedule from VOC
     def download_schedule(self, data):
         ses_id = data['session'].lower()
-        # Get client
-        client = vws.get_client()
         # Get session information (formats: ('skd', 'vex' 'skd|vex' 'vex|skd') default is 'skd|vex' skd first.
-        rsp = client.get(f'schedules/{ses_id}', params={'sta_id': self.sta_id, 'format': 'skd'})
-        if rsp.status_code == HTTPcodes.ok:
+        rsp = self.client.get(f'schedules/{ses_id}', params={'sta_id': self.sta_id, 'format': 'skd'})
+        if rsp:
             found = self.extract_name(rsp.headers['content-disposition'])
             if found:
                 filename = found['name']
@@ -103,7 +101,6 @@ class Listener:
                     f.write(rsp.content)
 
                 print(f'{filename} has been downloaded!')
-                # You could add code to process new schedule
 
 
 if __name__ == '__main__':
@@ -117,6 +114,6 @@ if __name__ == '__main__':
 
     args = settings.init(parser.parse_args())
 
-    Listener().monit(keep_alive=True)
+    Listener(args.code, args.session).monit(keep_alive=True)
 
 

@@ -11,9 +11,9 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QMainWindow, QApplication, QWidget, QLayout, QLineEdit
 from PyQt5.QtWidgets import QLabel, QVBoxLayout, QHBoxLayout, QGroupBox, QGridLayout, QPushButton, QPlainTextEdit
 
-from vcc import settings, json_decoder, signature, VCCError
+from vcc import settings, json_decoder, VCCError
 from vcc.session import Session
-from vcc.vws import get_inbox_credentials, get_client
+from vcc.vws import get_client
 
 from processes import Timer, Get, MultiGet, ErrorMessage, make_text_box
 from processes.messenger import Messenger
@@ -109,10 +109,11 @@ class Dashboard(QMainWindow):
 
         # Start messenger
         try:
-            info = get_inbox_credentials('DB', session=self.session.code)  # Request queue information from web service
+            client = get_client('DB')
+            info = client.get_inbox_credentials(self.session.code)  # Request queue information from web service
             self.messenger = Messenger(info, self.process_messages)
             self.messenger.start()
-        except :
+        except:
             ErrorMessage(self.full_name, 'Could not start messenger')
 
     # Set initial position for interface
@@ -122,10 +123,9 @@ class Dashboard(QMainWindow):
 
     def get_session(self, ses_id):
         try:
-            client = get_client()
-            headers = signature.make('DB')
-            rsp = client.get(f'/sessions/{ses_id}', headers=headers)
-            if not rsp or not signature.validate(rsp):
+            client = get_client('DB')
+            rsp = client.get(f'/sessions/{ses_id}')
+            if not rsp:
                 raise VCCError(f'{ses_id} not found')
             return Session(json_decoder(rsp.json()))
         except VCCError as exc:
@@ -492,7 +492,7 @@ class Dashboard(QMainWindow):
     def process_session_response(self, ses_id, response, error):
 
         try:
-            if response and signature.validate(response):
+            if response:
                 self.session = Session(response.json())
                 self.network = self.session.network
                 self.update_session_box()
@@ -510,7 +510,7 @@ class Dashboard(QMainWindow):
     def process_schedule_response(self, ses_id, response, error):
 
         try:
-            if response and signature.validate(response):
+            if response:
                 sched = response.json()
                 self.session.update_schedule(sched)
                 self.network = self.session.network
@@ -548,7 +548,7 @@ class Dashboard(QMainWindow):
     # Receive SEFDs and update monit box
     def process_sefds(self, sta_id, response, error):
         try:
-            if response and signature.validate(response):
+            if response:
                 self.sefds[sta_id]['data'] = response.json()
                 sefd = self.sefds[sta_id]['data']
                 if sefd:

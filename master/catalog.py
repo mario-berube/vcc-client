@@ -1,6 +1,6 @@
 import re
 
-from vcc import signature, VCCError
+from vcc import VCCError
 from vcc.vws import get_client
 
 
@@ -16,23 +16,22 @@ def update_network(client, path):
 
     # Get existing information from VOC
     try:
-        client = get_client()
-        headers = signature.make('CC')
-        rsp = client.get('/stations', headers=headers)
-        if not rsp or not signature.validate(rsp):
+        client = get_client('CC')
+        rsp = client.get('/stations')
+        if not rsp:
             raise VCCError(rsp.text)
         old = {data['code']: data for data in rsp.json() if data.pop('updated')}
         if network == old:
             raise VCCError('No changes in network stations')
         added = {code: value for (code, value) in network.items() if old.get(code) != value}
         if added:
-            rsp = client.post('/stations', data=added, headers=headers)
-            if not rsp or not signature.validate(rsp):
+            rsp = client.post('/stations', data=added)
+            if not rsp:
                 raise VCCError(rsp.text)
             [print(f'{index:4d} {sta} {status}') for index, (sta, status) in enumerate(rsp.json().items(), 1)]
         for index, sta_id in enumerate([code for code in old if code not in network], 1):
-            rsp = client.delete(f'/stations/{sta_id}', headers=headers)
-            if not rsp or not signature.validate(rsp):
+            rsp = client.delete(f'/stations/{sta_id}')
+            if not rsp:
                 raise VCCError(rsp.text)
             print(f'{index:4d} {sta_id} {rsp.json()[sta_id]}')
     except VCCError as exc:
@@ -59,10 +58,9 @@ def update_codes(code_type, path):
                 in_section = True
     if data:
         try:
-            client = get_client()
-            headers = signature.make('CC')
-            rsp = client.post(f'/catalog/{name}', data=data, headers=headers)
-            if not rsp or not signature.validate(rsp):
+            client = get_client('CC')
+            rsp = client.post(f'/catalog/{name}', data=data)
+            if not rsp:
                 raise VCCError(rsp.text)
             print(f'{len([code for code, status in rsp.json().items() if status == "updated"])} '
                   f'of {len(data)} codes where updated')

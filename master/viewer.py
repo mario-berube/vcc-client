@@ -8,7 +8,7 @@ from PyQt5.QtWidgets import QComboBox, QFrame, QMessageBox, QStyle, qApp
 from PyQt5.QtCore import Qt
 
 from master import COLUMNS
-from vcc import signature, json_decoder, VCCError
+from vcc import json_decoder, VCCError
 from vcc.vws import get_client
 from vcc.session import Session
 
@@ -58,19 +58,18 @@ class SessionViewer(QMainWindow):
         super().__init__()
 
         try:
-            client = get_client()
+            self.client = get_client('CC')
         except VCCError as exc:
             ErrorMessage(str(exc), critical=True)
             sys.exit(0)
-        self.headers = signature.make('CC')
 
-        self.session = self.get_session(client, ses_id)
-        self.operations = self.make_combobox(client, '/catalog/operations', self.session.operations)
-        self.correlator = self.make_combobox(client, '/catalog/correlator', self.session.correlator)
-        self.analysis = self.make_combobox(client, '/catalog/analysis', self.session.analysis)
-        self.db_code = self.make_combobox(client, '/catalog/dbc_codes', self.session.db_code)
+        self.session = self.get_session(ses_id)
+        self.operations = self.make_combobox('/catalog/operations', self.session.operations)
+        self.correlator = self.make_combobox('/catalog/correlator', self.session.correlator)
+        self.analysis = self.make_combobox('/catalog/analysis', self.session.analysis)
+        self.db_code = self.make_combobox('/catalog/dbc_codes', self.session.db_code)
 
-        self.stations = self.get_stations(client)
+        self.stations = self.get_stations()
 
         self.setWindowFlags(Qt.CustomizeWindowHint | Qt.WindowCloseButtonHint | Qt.WindowMinimizeButtonHint)
         self.setWindowTitle(f'Session {self.session.code}')
@@ -173,12 +172,11 @@ class SessionViewer(QMainWindow):
             return
         # Update information on VCC
         try:
-            client = get_client()
+            client = get_client('CC')
             data = {code: getattr(self.session, code) for code in COLUMNS if hasattr(self.session, code)}
             data = dict(**data, **{'start': self.session.start, 'type': self.session.type, 'stations': get_text(5, 1)})
-            headers = signature.make('CC')
-            rsp = client.put(f'/sessions/{self.session.code}', data=data, headers=headers)
-            if not rsp or not signature.validate(rsp):
+            rsp = client.put(f'/sessions/{self.session.code}', data=data)
+            if not rsp:
                 raise VCCError(f'VCC response {rsp.status_code}\n{rsp.text}')
             ErrorMessage(f'{self.session.code.upper()} not updated\nSame information already on VCC'
                          if json_decoder(rsp.json())[self.session.code] == 'same'
@@ -186,29 +184,29 @@ class SessionViewer(QMainWindow):
         except VCCError as exc:
             ErrorMessage(f'Problem updating {self.session.code}\n{str(exc)}')
 
-    def get_session(self, client, ses_id):
+    def get_session(self, ses_id):
         try:
-            rsp = client.get(f'/sessions/{ses_id}', headers=self.headers)
-            if rsp and signature.validate(rsp):
+            rsp = self.client.get(f'/sessions/{ses_id}')
+            if rsp:
                 return Session(json_decoder(rsp.json()))
         except VCCError:
             pass
         return Session({'code': ses_id})
 
-    def get_stations(self, client):
+    def get_stations(self):
         try:
-            rsp = client.get(f'/stations', headers=self.headers)
-            if rsp and signature.validate(rsp):
+            rsp = self.client.get(f'/stations')
+            if rsp:
                 return [sta['code'].capitalize() for sta in json_decoder(rsp.json())]
         except VCCError:
             pass
         return []
 
-    def make_combobox(self, client, url, selection):
+    def make_combobox(self, url, selection):
+        cb = QComboBox()
         try:
-            rsp = client.get(url, headers=self.headers)
-            cb = QComboBox()
-            if rsp and signature.validate(rsp):
+            rsp = self.client.get(url)
+            if rsp:
                 [cb.addItem(item['code'].strip()) for item in json_decoder(rsp.json())]
         except VCCError:
             pass

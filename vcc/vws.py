@@ -3,15 +3,15 @@ import requests
 from sshtunnel import SSHTunnelForwarder
 from urllib.parse import urljoin
 
-from vcc import settings, signature, json_encoder, VCCError
+from vcc import make_object, settings, signature, json_encoder, VCCError
 
 
 # Class to connect to VCC Web Service VWS
 class VWSclient:
-    def __init__(self, config, ssh_pkey, keep_alive=False):
-        self.tunnel, self.session, self.base_url = None, None, None
+    def __init__(self, config, group_id, keep_alive=False):
+        self.tunnel, self.session, self.base_url, self.jwt_data = None, None, None, None
         # Copy elements of web_service into VWSclient class
-        self.config, self.ssh_pkey, self.keep_alive = config, ssh_pkey, keep_alive
+        self._config, self.group_id, self.keep_alive = config, group_id, keep_alive
 
         self.connect()
 
@@ -27,19 +27,26 @@ class VWSclient:
     def __del__(self):
         self.close()
 
+    # Get config for this client
+    @property
+    def config(self):
+        return self._config.__dict__
+
     # Connect to VCC
     def connect(self):
-        url, port = self.config.url, self.config.port
-        if self.config.tunnel:
-            self.tunnel = SSHTunnelForwarder(self.config.url, ssh_username=self.config.tunnel, ssh_pkey=self.ssh_pkey,
-                                             remote_bind_address=('localhost', self.config.port)
+        url, port = self._config.url, self._config.api_port
+        if hasattr(self._config, 'tunnel'):
+            self.tunnel = SSHTunnelForwarder(self._config.url, ssh_username=self._config.tunnel,
+                                             ssh_pkey=self._config.ssh_pkey,
+                                             remote_bind_address=('localhost', port)
                                              )
             self.tunnel.daemon_forward_servers = True
             self.tunnel.start()
             url, port = '127.0.0.1', self.tunnel.local_bind_port
 
-        self.base_url = f'{self.config.protocol}://{url}:{port}'
+        self.base_url = f'{self._config.protocol}://{url}:{port}'
         self.session = requests.Session()
+        self.session.headers.update(signature.make(self.group_id))
 
     @property
     # Check if site is available by requesting a welcome message
@@ -70,7 +77,9 @@ class VWSclient:
     # GET data from web service
     def get(self, path, params=None, headers=None, timeout=None, retries=0):
         try:
-            return self.session.get(url=urljoin(self.base_url, path), params=params, headers=headers, timeout=timeout)
+            rsp = self.session.get(url=urljoin(self.base_url, path), params=params, headers=headers, timeout=timeout)
+            self.jwt_data = signature.validate(rsp) if rsp and path != '/' else None
+            return rsp
         except requests.exceptions.ConnectionError:
             if self.session and self.keep_alive and retries < 3:
                 self.connect()
@@ -80,8 +89,10 @@ class VWSclient:
     # POST data to web service
     def post(self, path, data=None, files=None, headers=None, retries=0):
         try:
-            return self.session.post(url=urljoin(self.base_url, path), json=json_encoder(data), files=files,
-                                     headers=headers)
+            rsp = self.session.post(url=urljoin(self.base_url, path), json=json_encoder(data), files=files,
+                                    headers=headers)
+            self.jwt_data = signature.validate(rsp) if rsp else None
+            return rsp
         except requests.exceptions.ConnectionError:
             if self.session and self.keep_alive and retries < 3:
                 self.connect()
@@ -91,8 +102,10 @@ class VWSclient:
     # PUT data to web service
     def put(self, path, data=None, files=None, headers=None, retries=0):
         try:
-            return self.session.put(url=urljoin(self.base_url, path), json=json_encoder(data), files=files,
-                                    headers=headers)
+            rsp = self.session.put(url=urljoin(self.base_url, path), json=json_encoder(data), files=files,
+                                   headers=headers)
+            self.jwt_data = signature.validate(rsp) if rsp else None
+            return rsp
         except requests.exceptions.ConnectionError:
             if self.session and self.keep_alive and retries < 3:
                 self.connect()
@@ -102,35 +115,34 @@ class VWSclient:
     # DELETE data from web service
     def delete(self, path, headers=None, retries=0):
         try:
-            return self.session.delete(url=urljoin(self.base_url, path), headers=headers)
+            rsp = self.session.delete(url=urljoin(self.base_url, path), headers=headers)
+            self.jwt_data = signature.validate(rsp) if rsp else None
+            return rsp
         except requests.exceptions.ConnectionError:
             if self.session and self.keep_alive and retries < 3:
                 self.connect()
                 return self.delete(path, headers=headers, retries=retries + 1)
         return None
 
+    # Get credentials from VCC api to access inbox
+    def get_inbox_credentials(self, session=None):
+        # Connect to VCC to get username and password to connect to message broker
+        try:
+            rsp = self.get('/users/inbox', headers={'session': session})
+            if rsp:  # Combined client config with information in signature
+                return make_object(dict(**self.config, **self.jwt_data))
+            raise VCCError(f'Problem at VCC api [{rsp.status_code}] [{rsp.text}]')
+        except VCCError as exc:
+            raise VCCError(str(exc))
+
 
 # Get first available VWS client
-def get_client(keep_alive=False):
+def get_client(group_id, keep_alive=False):
     # Get list of VLBI Communications Center (VCC)
     if hasattr(settings, 'VCC'):
-        for name, ws in settings.VCC.__dict__.items():
-            client = VWSclient(ws, settings.KEY, keep_alive=keep_alive)
+        for name, config in settings.VCC.__dict__.items():
+            setattr(config, 'ssh_pkey', settings.KEY)
+            client = VWSclient(config, group_id, keep_alive=keep_alive)
             if client and client.is_available:
                 return client
     raise VCCError('could not connect to VCC api')
-
-
-# Get credentials from VCC api to access inbox
-def get_inbox_credentials(group_id, session=None, client=None):
-    # Connect to VCC to get username and password to connect to message broker
-    try:
-        if not hasattr(settings.Signatures, group_id):
-            raise VCCError(f'{group_id} not in configuration file')
-        client = get_client()
-        rsp = client.get('/users/inbox', headers=signature.make(group_id, data={'session': session}))
-        if rsp:  # Combined ssh_pkey with information in signature
-            return dict(**signature.validate(rsp), **{'ssh_pkey': settings.KEY})
-        raise VCCError(f'Problem at VCC api [{rsp.status_code}] [{rsp.text}]')
-    except VCCError as exc:
-        raise VCCError(str(exc))

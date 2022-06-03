@@ -1,5 +1,5 @@
 
-if __name__ == '__main__':
+def main():
     import argparse
     from vcc import settings
     from dashboard import Dashboard
@@ -16,8 +16,11 @@ if __name__ == '__main__':
         dashboard = Dashboard(args.dashboard)
         dashboard.exec()
     elif args.picker:
-        print(args.picker)
         picker = SessionPicker(args.picker)
         picker.exec()
 
 
+if __name__ == '__main__':
+    import sys
+
+    sys.exit(main())

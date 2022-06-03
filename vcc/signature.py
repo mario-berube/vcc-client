@@ -11,20 +11,22 @@ secret = secrets.token_hex(8)  # secret key that will be used by VCC to create J
 
 
 # Make signature and encode using ssh private key
-def make(group_id, data={}, exp=300):
+def make(group_id, data={}, exp=0):
     global secret
 
-    headers = {}
-    if hasattr(settings.Signatures, group_id):
-        code, uid = getattr(settings.Signatures, group_id)
-        data = dict(**data, **{'code': code, 'group': group_id, 'secret': secret, 'exp': time() + exp})
-        # use ssh private key to encode Jason Web Token
-        try:  # Decode file as not PEM format
-            key = serialization.load_ssh_private_key(open(settings.KEY, 'r').read().encode(), password=b'')
-        except ValueError:  # It looks like file is in PEM format
-            key = open(settings.KEY, 'r').read()
-        headers = {'token': jwt.encode(payload=data, key=key, algorithm='RS256', headers={'uid': uid})}
-    return headers
+    if not hasattr(settings.Signatures, group_id):
+        raise VCCError(f'{group_id} not in configuration file')
+
+    code, uid = getattr(settings.Signatures, group_id)
+    data = dict(**data, **{'code': code, 'group': group_id, 'secret': secret})
+    if exp > 0:
+        data['exp'] = time() + exp
+    # use ssh private key to encode Jason Web Token
+    try:  # Decode file as not PEM format
+        key = serialization.load_ssh_private_key(open(settings.KEY, 'r').read().encode(), password=b'')
+    except ValueError:  # It looks like file is in PEM format
+        key = open(settings.KEY, 'r').read()
+    return {'token': jwt.encode(payload=data, key=key, algorithm='RS256', headers={'uid': uid})}
 
 
 # Validate signature of information received by VCC

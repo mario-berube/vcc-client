@@ -7,7 +7,7 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import QMainWindow, QApplication, QWidget, QLayout
 from PyQt5.QtWidgets import QLabel, QVBoxLayout, QHBoxLayout, QGroupBox, QGridLayout, QPushButton
 
-from vcc import settings, signature, VCCError
+from vcc import settings, VCCError
 from vcc.vws import get_client
 from vcc.session import Session
 
@@ -70,16 +70,15 @@ class SessionPicker(QMainWindow):
     def get_sessions(begin, end, master):
         # Get session information from VLBI web service (vws)
         try:
-            client = get_client()
-            headers = signature.make('DB')
-            rsp = client.get('/sessions', params={'begin': begin, 'end': end, 'master': master}, headers=headers)
-            if rsp and signature.validate(rsp):
+            client = get_client('DB')
+            rsp = client.get('/sessions', params={'begin': begin, 'end': end, 'master': master})
+            if rsp:
                 for ses_id in rsp.json():
-                    rsp = client.get(f'/sessions/{ses_id}', headers=headers)
-                    if rsp and signature.validate(rsp):
+                    rsp = client.get(f'/sessions/{ses_id}')
+                    if rsp:
                         session = Session(rsp.json())
-                        rsp = client.get(f'/schedules/{ses_id}', params={'select': 'summary'}, headers=headers)
-                        if rsp and signature.validate(rsp):
+                        rsp = client.get(f'/schedules/{ses_id}', params={'select': 'summary'})
+                        if rsp:
                             session.update_schedule(rsp.json())
                         yield session
         except VCCError:

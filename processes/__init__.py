@@ -153,7 +153,7 @@ class Get(QThread):
         super().__init__()
 
         self.path, self.params = path, params
-        self.headers = signature.make(group_id)
+        self.group_id = group_id
         self.command = None
 
     def on_finish(self, command, function):
@@ -162,8 +162,8 @@ class Get(QThread):
 
     def run(self):
         try:
-            client = get_client()
-            response, error = client.get(self.path, self.params, headers=self.headers), None
+            client = get_client(self.group_id)
+            response, error = client.get(self.path, self.params), None
         except VCCError as exc:
             response, error = None, str(exc)
         self.finished.emit(self.command, response, error)
@@ -176,16 +176,16 @@ class Post(QThread):
     def __init__(self, group_id, path, data=None, files=None):
         super().__init__()
 
-        self.path, self.data, self.files, self.headers = path, data, files
-        self.headers = signature.make(group_id)
+        self.path, self.data, self.files = path, data, files
+        self.group_id = group_id
 
     def on_finish(self, function):
         self.finished.connect(function)
 
     def run(self):
         try:
-            client = get_client()
-            response, error = client.post(self.path, files=self.files, data=self.data, headers=self.headers), None
+            client = get_client(self.group_id)
+            response, error = client.post(self.path, files=self.files, data=self.data), None
         except VCCError as exc:
             response, error = None, str(exc)
         self.finished.emit(response, error)
@@ -204,13 +204,13 @@ class MultiGet(QThread):
 
     def __init__(self, group_id):
         super().__init__()
-        self.headers = signature.make(group_id)
+        self.group_id = group_id
         self.actions = None
 
     def do_nothing(self):
         pass
 
-    def set_requests(self, actions, on_reply, on_error, on_finished=None, headers=None):
+    def set_requests(self, actions, on_reply, on_error, on_finished=None):
         self.actions = actions
         self.processed.connect(on_reply)
         self.error.connect(on_error)
@@ -218,9 +218,9 @@ class MultiGet(QThread):
 
     def run(self):
         try:
-            client = get_client()
+            client = get_client(self.group_id)
             for (sta_id, path, params) in self.actions:
-                response = client.get(path, params, headers=self.headers)
+                response = client.get(path, params)
                 self.processed.emit(sta_id, response, '')
             self.finished.emit()
         except VCCError as exc:

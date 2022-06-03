@@ -26,7 +26,7 @@ class RMQclient:
 
         # Initialize some variables
         self.exchange = self.queue = self.tunnel = None
-        self.config = config
+        self._config = config
 
         self._last_msg = (None, None)
         self.connection, self.publishing, self.consuming = None, None, None
@@ -45,6 +45,11 @@ class RMQclient:
     # Implement __exit__ needed by __enter__
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
+
+    # Get config for this client
+    @property
+    def config(self):
+        return self._config.__dict__
 
     # Make sure communications are close when instance is destroyed
     def __del__(self):
@@ -71,14 +76,14 @@ class RMQclient:
     # Connect to broker
     def connect(self):
         self.connection, self.publishing, self.consuming = None, None, None
-        url, port = self.config['url'], self.config['port']
-        self.exchange, self.queue = self.config['exchange'], self.config['queue']
+        url, port = self._config.url, self._config.msg_port
+        self.exchange, self.queue = self._config.exchange, self._config.queue
 
         try:
-            if self.config.get('tunnel'):
+            if hasattr(self._config, 'tunnel'):
                 try:
-                    self.tunnel = SSHTunnelForwarder(url, ssh_username=self.config['tunnel'],
-                                                     ssh_pkey=self.config['ssh_pkey'],
+                    self.tunnel = SSHTunnelForwarder(url, ssh_username=self._config.tunnel,
+                                                     ssh_pkey=self._config.ssh_pkey,
                                                      remote_bind_address=('localhost', port)
                                                      )
                     self.tunnel.start()
