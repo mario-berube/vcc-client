@@ -2,11 +2,13 @@ import json
 import re
 import os
 import signal
+import sys
 
 from vcc import settings, messaging
 from vcc.vws import get_client, VCCError
 from vcc.session import Session
 
+from PyQt5.QtWidgets import QApplication, QMessageBox
 
 class Listener:
 
@@ -28,6 +30,16 @@ class Listener:
         exit(0)
 
     def monit(self, keep_alive=False):
+
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Information)
+
+        msg.setText("This is a message box")
+        msg.setInformativeText("This is additional information")
+        msg.setWindowTitle("MessageBox demo")
+        msg.setDetailedText("The details are as follows:")
+        msg.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+        msg.show()
 
         while True:
             try:
@@ -106,6 +118,8 @@ class Listener:
 if __name__ == '__main__':
 
     import argparse
+
+    app = QApplication(sys.argv)
 
     parser = argparse.ArgumentParser( description='Station Listener' )
     parser.add_argument('-c', '--config', help='config file', required=True)

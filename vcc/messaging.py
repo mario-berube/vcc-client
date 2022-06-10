@@ -199,6 +199,7 @@ class RMQclient:
         try:
             if self.process_timeout:
                 self.timeout_id = self.connection.call_later(self.timeout, self.on_timeout)
+            self.consuming.basic_qos(prefetch_count=1)
             self.consuming.basic_consume(queue=self.queue, on_message_callback=self.new_msg, auto_ack=False)
             self.consuming.start_consuming()
         except (pika.exceptions.ConnectionClosedByBroker, pika.exceptions.ConnectionClosed,

@@ -101,7 +101,7 @@ if __name__ == '__main__':
     signal.signal(signal.SIGINT, kill_it)
     signal.signal(signal.SIGTERM, kill_it)
 
-    folder = '/usr2/log'
+    folder = '/Users/Mario/VLBI/logs'
     station = os.path.join(folder, 'station.log')
 
     files = {station: Scanner(print_it, station)}
